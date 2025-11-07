@@ -7,6 +7,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
 
 /*
  * FILE: Auto_Blue_30.java
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
  *
  * PURPOSE
  *   - Run the BLUE alliance human-player side start (west tile, robot facing
