@@ -10,26 +10,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
  *
  * PURPOSE
- *   - Run the BLUE alliance human-player side start (west tile, robot facing
- *     NORTH) exactly as described in DECODE_Season_Context.md so the preload is
- *     launched before transitioning toward the classifier zone.
- *   - Demonstrate how the AutoSequence builder stitches together the shared
- *     scan, aim, fire, and drive helpers for a straightforward "find Tag 20 →
- *     shoot → drive" routine that students can iterate on quickly.
+ *   - Run the BLUE alliance robot 30 inches forward and stops.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
- *   - move(... 2 in, heading 0°, speed 0.35)
- *       • Gentle wall-clear bump before the tag scan.
- *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 90°/30°)
- *       • Sweeps counter-clockwise up to 90° after the wall-clear, then checks
- *         30° clockwise while searching for Tag 20. Increase the sweep angles
- *         or speed fraction for more aggressive hunts.
- *   - readyToLaunch(timeout 3200 ms)
- *       • Waits for the launcher to reach SharedRobotTuning.RPM_TOLERANCE and settle.
- *   - fire(shots = 3, betweenShotsMs = 3000)
- *       • Supplies cadence inline so each sequence controls its own spacing.
- *   - move(... 24 in, heading 0°, speed 0.55)
- *       • Distance toward the classifier once the preload volley is finished.
+ *   - move(... 30 in, heading 0°, speed 0.35)
  *
  * METHODS
  *   - alliance()
@@ -49,20 +33,12 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  */
 @Autonomous(name="Auto: Blue 30", group="Auto", preselectTeleOp="TeleOp - Blue")
 public class Auto_Blue_30 extends BaseAuto {
-    // CHANGES (2025-10-31): Added wall-clear drive, telemetry-guided tag scan, locked volley,
-    //                        heading reset, and 24" advance per refreshed Auto steps.
-    // CHANGES (2025-10-31): Switched to AutoSequence for clearer movement/aim/fire scripting
-    //                        with adjustable power caps and explicit tag scan control.
-    // CHANGES (2025-11-02): Added AutoSpeed pre-spin warm-up and configurable volley spacing parameter.
-    // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
-    //                        adopted the shared AutoSpeed settle behavior.
-    // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry label describing the expected robot orientation at init (edit
     // this string whenever the start pose changes so the Driver Station prompt
     // stays accurate).
-    @Override protected String startPoseDescription() { return "Start: Blue Human — West of south firing triangle, FACING NORTH"; }
+    @Override protected String startPoseDescription() { return "Start: Blue Team — Anywhere along wall"; }
 
     // Primary autonomous path: turn, confirm RPM, fire preload, reposition.
     @Override
