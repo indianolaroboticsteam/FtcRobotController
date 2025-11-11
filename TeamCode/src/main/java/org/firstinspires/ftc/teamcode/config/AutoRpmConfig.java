@@ -52,7 +52,7 @@ public final class AutoRpmConfig {
     public static double FAR_DIST_IN       = 60.0; // Far-shot anchor distance; align with autonomous standoff distances
     public static double FAR_RPM           = 4700.0; // RPM for FAR_DIST_IN; still clamped by Launcher.RPM_MAX
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
-    public static double DEFAULT_NO_TAG_RPM = 4450.0; // RPM to hold while AutoSpeed runs without a tag lock
+    public static double DEFAULT_NO_TAG_RPM = 4500.0; // RPM to hold while AutoSpeed runs without a tag lock
 
     /** Apply standard params to a controller. Safe to call repeatedly. */
     public static void apply(LauncherAutoSpeedController ctrl) {
