@@ -76,10 +76,14 @@ TeamCode/
     │   └── AutoAimSpeed.java                 ← Shared AutoAim + AutoSpeed helper
     ├── auto/
     │   ├── BaseAuto.java                     ← Shared Auto mode logic + AutoSequence builder
+    │   ├── Auto_Blue_30.java                 ← Blue alliance safety auto (drive 30" and stop)
+    │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 long-run volley → retreat)
+    │   ├── Auto_Blue_Human_LongShot.java     ← Blue human-side launch-line volley → drive upfield
     │   ├── Auto_Blue_Target.java             ← Blue depot auto (Tag 20 volley, hold position)
-    │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 volley → drive upfield)
+    │   ├── Auto_Red_30.java                  ← Red alliance safety auto (drive 30" and stop)
+    │   ├── Auto_Red_Human.java               ← Red human-side auto (Tag 24 long-run volley → retreat)
+    │   ├── Auto_Red_Human_LongShot.java      ← Red human-side launch-line volley → drive upfield
     │   ├── Auto_Red_Target.java              ← Red depot auto (Tag 24 volley, hold position)
-    │   ├── Auto_Red_Human.java               ← Red human-side auto (Tag 24 volley → drive upfield)
     │   └── AutoSequenceGuide.md              ← Reference + examples for the AutoSequence builder
     ├── config/
     │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
@@ -306,7 +310,7 @@ or game mode owns each parameter before making adjustments.
 While STOPPED, TeleOp ignores control outputs, reasserts **BRAKE zero-power behavior on every motor**, keeps mechanisms at zero power,
 and temporarily disables the feed motor's idle hold so the motor rests at 0.
 The launcher automatically returns to FLOAT the next time RPM is commanded so normal spin-up behavior resumes after releasing the latch.
-Press **Start** again to **RESUME** normal control, which restores the idle hold automatically.
+Press **Start** again to **RESUME** normal control, which restores the idle hold automatically and re-applies the intake's prior ON/OFF state so drivers pick up exactly where they left off.
 
 - Engaged manually any time by pressing **Start** (G1 or G2).  
 - Also executed automatically by the **Auto-Stop timer** when enabled and the countdown reaches zero.  
@@ -335,6 +339,8 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-13** – Refreshed all autonomous header comments to document the new long-run, launch-line long-shot, and 30" safety routes (noting five-shot cadence, retreat/advance plans, and vision swaps) and added the new auto classes to the Project Layout tree for quick discovery.
+- **2025-11-12** – Captured the live intake state before StopAll engages so resuming with Start restores whichever intake mode was active, eliminating the need to re-toggle the motor after manual or timer-triggered stops; documented the behavior in the StopAll section for drive team clarity.
 - **2025-11-11** – Added the "X - Test - Camera Stream" diagnostic TeleOp that boots with live streaming enabled, limits control to drivetrain drive/strafe/twist plus AprilTag telemetry, and maps Gamepad 1 D-pad left/right to swap between the tuned 480p performance and 720p sighting profiles; documented the workflow and updated the project layout accordingly.
 - **2025-11-10** – Added a TeleOp Reverse Drive mode toggled by the Gamepad 1 left stick button, inverting forward/strafe vectors while leaving twist intact, hooked the toggle into the shared rumble patterns (double on enable, single on disable), surfaced the mode state in telemetry, and updated the controller layout + Reverse Drive documentation for drivers.
 - **2025-11-07** – Made TeleOp feed/eject routines asynchronous so driver inputs stay live during shots, added intake-assist timers tied to the new Feed state machine, updated BaseAuto to use the shared gating, refreshed docs to note the non-blocking behavior, reworked toggle rumble pulses so double-blip feedback no longer sleeps the TeleOp loop, moved TeleOp vision profile swaps onto a background executor so switching between P480/P720 no longer stalls the drive loop, queued AutoSpeed enable/disable requests so RPM seeding + rumble feedback happen after the control scan without pausing drive input, reworked the FeedStop to home at INIT, auto-scale the servo window for separate hold/release degree targets, ensure StopAll parks at the homed zero, and retire obsolete tunables with updated telemetry/docs, defaulted FeedStop to full-span servo travel with an optional auto-scale toggle, refreshed telemetry strings, cleaned up the docs/tunable listings, and added a two-phase guarded homing routine with soft-limit clamps, safe-open travel caps, auto-scale telemetry, and StopAll/stop-to-home safeguards documented for pit crews.
