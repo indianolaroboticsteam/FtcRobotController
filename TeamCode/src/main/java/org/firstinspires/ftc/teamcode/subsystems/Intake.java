@@ -57,6 +57,12 @@ import org.firstinspires.ftc.teamcode.config.IntakeTuning;
  * CHANGES (2025-11-16): Replaced the simple on/off control with an encoder-aware
  *                       jam classifier (FREE_FLOW, PACKING, SATURATED, JAMMED) plus
  *                       hold-power pulsing and Feed-aware load shedding.
+ * CHANGES (2025-11-17): Allow PACKING state to trigger the jam detection debounce so
+ *                       hard stalls that occur before saturation now flip directly
+ *                       into JAMMED and recover automatically.
+ * CHANGES (2025-11-18): Track packing progress so long pauses with no encoder
+ *                       movement now register as JAMMED even when the motor jitters
+ *                       just above the stall threshold.
  */
 public class Intake {
     private final DcMotorEx motor;
@@ -68,6 +74,8 @@ public class Intake {
     private int packStartTicks = 0;
     private int stallSampleCount = 0;
     private int contactSampleCount = 0;
+    private int packingNoProgressSamples = 0;
+    private int lastPackingTravelTicks = 0;
     private long jamRecoverUntilMs = 0L;
     private long holdPulseAnchorMs = 0L;
     private double lastCommandedPower = 0.0;
@@ -108,6 +116,8 @@ public class Intake {
         packStartTicks = lastSampleTicks;
         stallSampleCount = 0;
         contactSampleCount = 0;
+        packingNoProgressSamples = 0;
+        lastPackingTravelTicks = 0;
         holdPulseAnchorMs = System.currentTimeMillis();
         lastCommandedPower = 0.0;
     }
@@ -123,8 +133,10 @@ public class Intake {
             jamRecoverUntilMs = 0L;
             stallSampleCount = 0;
             contactSampleCount = 0;
+            packingNoProgressSamples = 0;
             lastSampleTicks = motor.getCurrentPosition();
             packStartTicks = lastSampleTicks;
+            lastPackingTravelTicks = 0;
             lastSampleTimeMs = System.currentTimeMillis();
             holdPulseAnchorMs = lastSampleTimeMs;
             update(false);
@@ -133,6 +145,8 @@ public class Intake {
             jamRecoverUntilMs = 0L;
             stallSampleCount = 0;
             contactSampleCount = 0;
+            packingNoProgressSamples = 0;
+            lastPackingTravelTicks = 0;
             applyPower(0.0);
         }
     }
@@ -156,8 +170,10 @@ public class Intake {
             state = FlowState.FREE_FLOW;
             stallSampleCount = 0;
             contactSampleCount = 0;
+            packingNoProgressSamples = 0;
             lastSampleTicks = motor.getCurrentPosition();
             packStartTicks = lastSampleTicks;
+            lastPackingTravelTicks = 0;
             holdPulseAnchorMs = now;
         }
 
@@ -235,14 +251,24 @@ public class Intake {
                 break;
             case PACKING:
                 int travel = Math.abs(currentTicks - packStartTicks);
+                if (travel > lastPackingTravelTicks) {
+                    lastPackingTravelTicks = travel;
+                    packingNoProgressSamples = 0;
+                } else {
+                    packingNoProgressSamples++;
+                }
                 if (travel >= packingTravel) {
                     enterSaturated(now);
+                } else if (stallSampleCount >= stallSamplesNeeded || packingNoProgressSamples >= stallSamplesNeeded) {
+                    enterJammed(now);
                 } else if (delta >= freeThreshold) {
                     // Column moved freely again—reset to FREE_FLOW so packing restarts from new reference.
                     state = FlowState.FREE_FLOW;
                     packStartTicks = currentTicks;
                     contactSampleCount = 0;
                     stallSampleCount = 0;
+                    packingNoProgressSamples = 0;
+                    lastPackingTravelTicks = 0;
                 }
                 break;
             case SATURATED:
@@ -251,6 +277,8 @@ public class Intake {
                     packStartTicks = currentTicks;
                     contactSampleCount = 0;
                     stallSampleCount = 0;
+                    packingNoProgressSamples = 0;
+                    lastPackingTravelTicks = 0;
                     holdPulseAnchorMs = now;
                 } else if (stallSampleCount >= stallSamplesNeeded) {
                     enterJammed(now);
@@ -270,6 +298,8 @@ public class Intake {
         packStartTicks = currentTicks;
         stallSampleCount = 0;
         contactSampleCount = 0;
+        packingNoProgressSamples = 0;
+        lastPackingTravelTicks = 0;
         holdPulseAnchorMs = now;
     }
 
@@ -277,6 +307,8 @@ public class Intake {
         state = FlowState.SATURATED;
         stallSampleCount = 0;
         contactSampleCount = 0;
+        packingNoProgressSamples = 0;
+        lastPackingTravelTicks = 0;
         holdPulseAnchorMs = now;
     }
 
@@ -285,6 +317,8 @@ public class Intake {
         jamRecoverUntilMs = now + Math.max(0, IntakeTuning.JAM_RECOVERY_PAUSE_MS);
         stallSampleCount = 0;
         contactSampleCount = 0;
+        packingNoProgressSamples = 0;
+        lastPackingTravelTicks = 0;
         holdPulseAnchorMs = now;
     }
 
