@@ -40,7 +40,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Left Trigger** | Brake – reduces top speed |
 | **Right Trigger** | Manual RPM control (**only** when **AutoSpeed = OFF**, **Lock = OFF**, **Test = OFF**) |
 | **Left Bumper (LB)** | **Tap:** feed once (with **Intake Assist** if Intake is OFF). **Hold:** continuous feed with FeedStop held open and intake assist latched if it was off. |
-| **Right Bumper (RB)** | **Toggle Intake On/Off** |
+| **Right Bumper (RB)** | **Toggle Intake On/Off** *(triple-tap quickly to latch reverse until the next tap)* |
 | **Right Stick Button (RS)** | **Toggle AutoAim** *(only ENABLES if a goal AprilTag is visible; auto-DISABLES if tag remains lost beyond grace window)* |
 | **Y / Triangle** | **Toggle AutoSpeed** *(double-pulse on ENABLE, single-pulse on DISABLE)* |
 | **X / Square** | **Toggle Manual RPM LOCK** *(only when AutoSpeed = OFF; holds current RPM)* |
@@ -54,7 +54,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | Control | Function |
 |---|---|
 | **Left Bumper (LB)** | **Feed once** (with **Intake Assist** if Intake is OFF) |
-| **Right Bumper (RB)** | **Toggle Intake On/Off** |
+| **Right Bumper (RB)** | **Toggle Intake On/Off** *(triple-tap quickly to latch reverse until the next tap)* |
 | **Y / Triangle** | **Toggle AutoSpeed** (mirrors G1) |
 | **D-pad Left** | **Select vision P480 profile** (640×480@30 performance stream) |
 | **D-pad Right** | **Select vision P720 profile** (1280×720@20 sighting stream) |
@@ -358,17 +358,8 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025-12-01** – Added fused odometry backed by wheel encoders, IMU heading, and goal-tag
-  corrections, introduced a dedicated odometry/field layout config and Dashboard drawing helper,
-  exposed a reusable move-to-position sequence plus intake artifact alignment, and enabled FTC
-  Dashboard dependency for both TeleOp and Auto use.
-- **2025-11-25** – Tuned odometry to use configurable goal-tag poses (XYZ+yaw) with camera
-  offsets for AprilTag fusion, added a PoseStore handoff so Autonomous writes its final pose for
-  TeleOp to reuse, enabled TeleOp INIT AprilTag re-localization plus live fused-pose telemetry,
-  documented the new Auto/TeleOp pose seeding flow and tag tunables, clarified that `setStartingPose(...)`
-  is invoked from the auto class (not the sequence builder) while Auto/TeleOp continue to blend goal-tag
-  fixes whenever visible, and seeded the human-side autos with default starting poses (-12, 0, 0) on BLUE
-  and (+12, 0, 0) on RED so odometry INIT telemetry matches staging.
+- **2025-11-25** – Integrated reverse-intake control, fused odometry, and AprilTag-aware pose handoff:
+Latched the triple-tap RB gesture so the intake now runs in reverse until the next tap restores the saved intake state, refreshed intake tuning/docs to drop the timed pulse duration, corrected the fireContinuous(label, time, requireLock) AutoSequence builder call in the BaseAuto helper, and updated controller layout/help text for the new reverse workflow. Added fused odometry backed by wheel encoders, IMU heading, and goal-tag corrections with a dedicated odometry/field-layout config plus Dashboard drawing support, exposed a reusable move-to-position sequence with intake-alignment helpers, and enabled FTC Dashboard for both TeleOp and Auto. Tuned odometry to use configurable goal-tag poses (XYZ + yaw) with camera offsets for tag fusion, added a PoseStore handoff so Autonomous writes its final pose for TeleOp reuse, enabled TeleOp INIT AprilTag re-localization with live fused-pose telemetry, documented the Auto/TeleOp pose-seeding and tag-tuning workflow, clarified that setStartingPose(...) is invoked from the Auto class (not the sequence builder), ensured both modes continue blending goal-tag fixes when visible, and seeded human-side autos with default starting poses (BLUE = –12, 0, 0; RED = +12, 0, 0) so odometry INIT telemetry matches staging.
 - **2025-11-23** – Added AutoRPM tweak scaling from the D-pad while AutoSpeed is active (2% per press, configurable), enabled continuous-feed holds that keep the gate open and intake assist running, and added per-call rotate-to-target timeouts (10 s default applied directly in each auto call, now expressed as `10000` ms literals) so AutoSequence scans bail out cleanly; documented the controls and tunables. Extended the AutoSequence `move(...)` step to include a twist offset so moves can finish at a heading relative to their start, refreshed the guide/examples to show the new signature, and updated every autonomous route to pass an explicit `0°` twist while preserving current behavior. Updated AutoSequence moves to steer toward their twist target during translation instead of turning afterward, enabling simultaneous heading changes along the path and documenting the behavior in the AutoSequence guide.
 - **2025-11-22** – Added a tunable master switch (`AutoAimTuning.LONG_SHOT_ENABLED`) for the alliance-biased long-shot window so crews can revert to symmetric tolerances without code edits; documented the toggle alongside the existing long-shot guidance.
 - **2025-11-21** – Verified that long-shot detection relies on the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`) and documented how calibration influences the bias cutover.
