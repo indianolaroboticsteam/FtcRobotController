@@ -57,6 +57,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 - **Highlights:**
   - Configurable wheel geometry and strafing compensation from [`config/DriveTuning`](./config/DriveTuning.java).
   - Dual constructors support blocking motion helpers in Auto and non-blocking TeleOp usage.
+  - Auto translation helpers remain in RUN_USING_ENCODER and taper speed off encoder deltas so commanded distances land consistently across different speed caps.
+  - Translation taper floors for straight moves and twist-blended moves live in [`config/DriveTuning`](./config/DriveTuning.java) so crews can raise/lower the minimum speed without editing drivetrain code.
   - `stopAll()` alias keeps StopAll compatibility across modes.
 - **Iterative Notes:** Motor direction fixes, IMU normalization, and settled-turn logic all surfaced in the file header to document drivetrain bring-up history.
 
@@ -102,6 +104,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Handles AutoAim/AutoSpeed toggles, rumble notifications, StopAll latch, and auto-stop timer logic.
   - Initializes shared subsystems and config classes, ensuring `config/*` overrides propagate at runtime.
   - Scales translation while AutoAim is active and exposes manual RPM D-pad nudges whenever AutoSpeed is disabled **and manual lock is engaged**.
+  - LB fire taps now honor the configured FeedStop lead/hold timing before any continuous streaming kicks in; LB holds only convert to continuous feed after the release window so single taps return to a one-shot cadence.
+  - Every feed request performs a brief AutoAim nudge whenever a goal tag is visible—even if AutoAim is toggled off—then restores the driver’s AutoAim setting after the shot.
   - Triple-tapping the RB intake toggle latches the intake in reverse (power in `IntakeTuning`) until the next tap restores the saved intake state.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
 
