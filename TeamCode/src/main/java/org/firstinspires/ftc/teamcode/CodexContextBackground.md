@@ -110,6 +110,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Every feed request performs a brief AutoAim nudge whenever a goal tag is visible—even if AutoAim is toggled off—then restores the driver’s AutoAim setting after the shot.
   - Triple-tapping the RB intake toggle latches the intake in reverse (power in `IntakeTuning`) until the next tap restores the saved intake state.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
+  - Long-shot aim bias now stays latched until a new tag distance is read so brief vision dropouts do not flip between NORMAL and LONG windows.
+  - All driver-station telemetry lines mirror to FTC Dashboard with graphable RPM Target, averaged RPM Actual, and per-wheel RPM channels for tuning.
 
 ### 🛰 Odometry & AprilTag Fusion ([`odometry/Odometry.java`](./odometry/Odometry.java))
 - **Role:** Provides a fused field pose for Auto and TeleOp using drive wheel deltas, IMU heading, and AprilTag goal detections.
@@ -155,6 +157,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 - **Centralized tunables prevent drift** – storing every parameter in `config/` keeps TeleOp and Auto synchronized even as students experiment.
 - **Field-centric math demands calibration** – IMU mounting (`SharedRobotTuning.LOGO_DIRECTION/USB_DIRECTION`) and strafing compensation (`DriveTuning.STRAFE_CORRECTION`) should be validated together after every rebuild.
 - **Vision aids should fail gracefully** – AutoAim retains last RPM and twists gently, so drivers can take over immediately when tags disappear.
+- **Vision robustness added (2025-12-03)** – P480 decimation dropped to 2.0 with a 12-point margin, and goal-tag visibility now tiers into raw/aim/smoothed states (3-frame ON / 5-frame OFF) that gate AutoAim entry/exit. TeleOp surfaces a Vision Health line using recent good/total ratios, margins, and brightness, and **TeleOp_Test_CameraStream** includes a 2.5 s health sampler (Gamepad 1 A) plus an optional normalized preview for pit lighting tests.
+- **Alliance-locked aiming (2025-12-03)** – AutoAim and AutoSpeed exclusively follow the alliance-correct goal tag (20 blue / 24 red); the opposite goal only feeds odometry, and obelisk IDs are excluded from aim/RPM/odometry inputs.
 - **StopAll builds driver trust** – a visible latch state and consistent recovery routine keep compliance simple during chaotic endgames.
 - **Documentation accelerates onboarding** – maintaining headers, the Tunable Directory, and this Codex background file lets new developers absorb context without reading every class.
 
