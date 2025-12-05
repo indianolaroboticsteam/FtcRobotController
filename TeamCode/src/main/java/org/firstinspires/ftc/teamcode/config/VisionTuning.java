@@ -241,7 +241,7 @@ public final class VisionTuning {
 
     // Lighting normalization toggles and parameters (AprilTag pre-processing)
     public static boolean ENABLE_BRIGHTNESS_NORMALIZATION = true;    // Global alpha/beta frame normalization toggle
-    public static boolean ENABLE_ADAPTIVE_EQUALIZATION = false;      // Enable CLAHE-style adaptive equalization after alpha/beta
+    public static boolean ENABLE_ADAPTIVE_EQUALIZATION = true;      // Enable CLAHE-style adaptive equalization after alpha/beta
     public static double TARGET_MEAN_BRIGHTNESS = 120.0;             // Target grayscale mean (0–255) to aim toward before tag solve
     public static double BRIGHTNESS_TOLERANCE = 8.0;                 // Allowed delta from target mean before any adjustment occurs
     public static double MIN_CONTRAST_GAIN = 0.9;                    // Lower clamp for contrast gain (alpha)
