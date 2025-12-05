@@ -80,7 +80,7 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-          .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
+          .visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
           .rememberHeading("Record start heading")
           .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
           .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.0, 0.35)
