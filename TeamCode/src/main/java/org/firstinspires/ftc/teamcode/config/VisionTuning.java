@@ -46,9 +46,9 @@ public final class VisionTuning {
     public static final int P480_FPS = 30;                              // Target frame rate for Performance profile (Control Hub friendly)
     public static final float P480_DECIMATION = 2.0f;                   // AprilTag decimation (higher skips pixels for speed)
     public static final int P480_PROCESS_EVERY_N = 1;                   // Process every frame (no skipping) when in Performance mode
-    public static final double P480_MIN_DECISION_MARGIN = 12.0;         // Reject detections with weaker decision margins than this threshold
-    public static final int P480_EXPOSURE_MS = 6;                      // Manual exposure in milliseconds tuned for indoor lighting
-    public static final int P480_GAIN = 85;                             // Camera-native gain for stable image brightness at 480p
+    public static final double P480_MIN_DECISION_MARGIN = 10.0;         // Reject detections with weaker decision margins than this threshold
+    public static final int P480_EXPOSURE_MS = 2;                      // Manual exposure in milliseconds tuned for indoor lighting
+    public static final int P480_GAIN = 50;                             // Camera-native gain for stable image brightness at 480p
     public static final boolean P480_WHITE_BALANCE_LOCK = true;         // Lock white balance after start to prevent drift
     public static final double P480_FX = 690.0;                         // Calibrated focal length (pixels) in X for 480p profile
     public static final double P480_FY = 690.0;                         // Calibrated focal length (pixels) in Y for 480p profile
