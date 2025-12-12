@@ -104,6 +104,7 @@ TeamCode/
     │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
     │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
     │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
+    │   ├── VisionConfig.java                 ← Vision source selector + alliance goal tag metadata
     │   └── VisionTuning.java                 ← AprilTag range scale + camera profile/intrinsics tunables
     ├── control/
     │   └── LauncherAutoSpeedController.java  ← Distance→RPM mapping + smoothing for AutoSpeed
@@ -123,8 +124,11 @@ TeamCode/
     ├── utils/
     │   └── ObeliskSignal.java            ← LED/signal helpers for Obelisk status patterns
     └── vision/
-        ├── VisionAprilTag.java           ← VisionPortal wrapper exposing Tag distance/pose
-        └── TagAimController.java         ← PID twist controller for Tag-centered aiming
+        ├── VisionTargetProvider.java         ← Unified heading/distance interface for vision sources
+        ├── LimelightTargetProvider.java      ← Limelight-backed goal/obelisk target provider (default)
+        ├── WebcamLegacyTargetProvider.java   ← VisionPortal-based legacy provider when webcam mode is selected
+        ├── VisionAprilTag.java               ← VisionPortal wrapper exposing Tag distance/pose
+        └── TagAimController.java             ← PID twist controller for Tag-centered aiming
 ```
 
 
@@ -215,10 +219,11 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.
 - **Shared initialization:** TeleOp and BaseAuto both call `vision.setRangeScale(VisionTuning.RANGE_SCALE)` so distance math and AutoSpeed RPM seeds stay consistent between match phases.
 - **Vision profiles** (`config/VisionTuning.java → P480_* / P720_*` constants via `VisionTuning.forMode(...)`):
-  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.8`, processes every frame, minimum decision margin = `18`, manual exposure = `10 ms`, gain = `95`, white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006).
-  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `24`, manual exposure = `15 ms`, gain = `110`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
+  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.0`, processes every frame, minimum decision margin = `10.0`, manual exposure = `6 ms` (**practice default**), gain = `85` (**practice default**), white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006). Event lighting switches to **2 ms** exposure and **50** gain while keeping the same P480 profile name.
+  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `24.0`, manual exposure = `7 ms`, gain = `85`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
   - **Startup defaults:** Profile = **P480**, live view **OFF** (no Driver Station preview).
   - **Runtime swaps:** TeleOp now queues profile changes on a background executor so the VisionPortal rebuild does not pause drive control when drivers tap D-pad left/right.
+  - **Environment selector:** `VisionTuning.VISION_ENVIRONMENT` (PRACTICE default) remaps the P480 exposure/gain/white balance lock to either the practice set (6 ms, 85, lock on) or the event set (2 ms, 50, lock on) without touching TeleOp/Auto callers.
   - **Auto lock tolerance:** BaseAuto automatically swaps to the profile-specific tolerances in `SharedRobotTuning` (`LOCK_TOLERANCE_DEG_P480` defaults to **1.5°**, `LOCK_TOLERANCE_DEG_P720` stays at **1.0°**) so 480p pose noise no longer blocks volley shots while 720p keeps the tighter window.
 - **Streaming toggle:** Gamepad 2 D-pad up/down calls `vision.toggleLiveView(...)` (prefers MJPEG preview when enabled).
 - **Telemetry bundle (≈10 Hz):**
@@ -303,11 +308,12 @@ The on-field **obelisk** displays one of three AprilTags that determine the **op
 | **23** | PPG | Purple → Purple → Green |
 
 ### Behavior
-- The robot continuously scans for these tags via `VisionAprilTag.observeObelisk()`.  
-- When detected, the shared class `ObeliskSignal` latches the pattern (`GPP`, `PGP`, or `PPG`) in memory.  
-- This value persists between Auto and TeleOp modes so both can access the same detected order.  
-- **Telemetry:** The first line on the Driver Station always shows the current obelisk result,  
+- The robot continuously scans for these tags via `VisionAprilTag.observeObelisk()`.
+- When detected, the shared class `ObeliskSignal` latches the pattern (`GPP`, `PGP`, or `PPG`) in memory.
+- This value persists between Auto and TeleOp modes so both can access the same detected order.
+- **Telemetry:** The first line on the Driver Station always shows the current obelisk result,
   e.g. `Obelisk: PGP (10 s ago)`.
+- Vision now falls back to the raw AprilTag list when scanning for obelisk IDs so marginal detections still latch the motif.
 
 ### Implementation Details
 | File | Purpose |
@@ -356,7 +362,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 - **Architecture:** Mecanum drive + IMU heading control.  
 - **Launcher:** Dual goBILDA 5202 6000 RPM motors, closed-loop PID.  
 - **Vision:** AprilTag ID 20/24 goal targeting.  
-- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading. TeleOp top-line telemetry lists Obelisk memory, Alliance, Intake, AutoSpeed, AutoAim, Reverse mode, and RPM Target/Actual (left/right) before other status lines, and every line is mirrored to FTC Dashboard alongside graphable RPM Target, averaged RPM Actual, and per-wheel RPM channels.
+- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading. TeleOp top-line telemetry lists Obelisk memory, Alliance, Intake, AutoSpeed, AutoAim, Reverse mode, and RPM Target/Actual (left/right) before other status lines, and every driver-station line is mirrored verbatim to FTC Dashboard (no extra-only dashboard data).
 - **File header standard:** `FILE / LOCATION / PURPOSE / NOTES / METHODS`.
 - **Rule Reference:** FTC 2025–2026 Competition Manual + Team Updates.
 
@@ -371,6 +377,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-12-09** – Added a `VisionTuning.VISION_ENVIRONMENT` selector that maps the existing P480 profile to either the practice lighting set (6 ms exposure, gain 85, white balance lock on) or the bright event set (2 ms, gain 50, white balance lock on) without changing TeleOp/Auto call sites, keeping PRACTICE as the default to preserve current behavior. Restored obelisk motif reporting by falling back to raw AprilTag detections when margin filters drop IDs 21/22/23 and tightened FTC Dashboard mirroring so only the same driver-station telemetry lines are sent in both TeleOp and Auto.
 - **2025-12-03** – Added tunable lighting normalization for the AprilTag pipeline (alpha/beta smoothing, optional CLAHE, and INIT exposure nudge) with TeleOp telemetry showing mean/alpha/beta/adaptive state so teams can stabilize detections under different field lighting, and hardened the hook with reflection so builds succeed even when the SDK omits the image-processor interface. Retuned the P480 profile (decimation = 2.0, min margin = 12) and layered new goal-tag visibility tiers (raw/aim/smoothed streaks) so AutoAim toggles and grace windows follow stable detections. Added a vision health line in TeleOp plus a 2.5 s health sampler in **X – Test – Camera Stream** (Gamepad 1 A) that reports good/total ratio, margin stats, brightness, and suggestions for exposure/gain or margin tweaks; enabled an optional normalized preview in that test OpMode for pit lighting checks. AutoAim and AutoSpeed now gate strictly on the alliance-correct goal tag (ID 20 blue / ID 24 red) while odometry alone may blend either goal tag. Long-shot range mode now stays latched until a new tag distance arrives instead of reverting to NORMAL on brief dropouts, and every driver-station telemetry line is mirrored to FTC Dashboard with graphable RPM Target, averaged RPM Actual, and per-wheel RPM channels.
 - **2025-12-02** – Preserved single-tap fire behavior even when the FeedStop release hold window is
  set to **0 ms** by only blocking taps when a nonzero release window is configured while still allowing
@@ -394,6 +401,8 @@ full field overlay each loop in TeleOp + Auto (DecodeFieldDrawing transform fix,
 artifact rows, launch triangles) while sending pose/state telemetry alongside
 phone telemetry, and the Auto→TeleOp pose handoff remains documented; TeleOp
 dashboard profile swaps now close out cleanly so telemetry continues streaming.
+- **2025-12-11** – Phase 1 of the unified vision abstraction: added a shared `VisionTargetProvider` interface with Limelight and legacy webcam implementations, centralized goal-tag metadata and a Limelight/Webcam selector in config, and documented the new default Limelight flow ahead of routing TeleOp/Auto to the abstraction. Phase 2a shifted `TagAimController` to read heading/error presence through the provider so aim PD now rides whichever vision source is selected without touching TeleOp/Auto wiring yet. Phase 2b routes `AutoAimSpeed` distance/heading gating through `VisionTargetProvider` (Limelight by default) while preserving AutoAim/AutoSpeed toggles, rumble, and the existing “no tag, no fire” rule, and Phase 2d wires `BaseAuto` tag lock + launcher prep to the same provider selection (Limelight default, webcam fallback) while leaving odometry fusion unchanged for now. Limelight now also latches Obelisk motif tags when selected so tag order telemetry stays live without the legacy webcam stack, and AutoSequence `visionMode(...)` builder calls automatically no-op when the Limelight provider is active so webcam-only profile swaps are ignored safely.
+ - **2025-12-11** – Phase 1 of the unified vision abstraction: added a shared `VisionTargetProvider` interface with Limelight and legacy webcam implementations, centralized goal-tag metadata and a Limelight/Webcam selector in config, and documented the new default Limelight flow ahead of routing TeleOp/Auto to the abstraction. Phase 2a shifted `TagAimController` to read heading/error presence through the provider so aim PD now rides whichever vision source is selected without touching TeleOp/Auto wiring yet. Phase 2b routes `AutoAimSpeed` distance/heading gating through `VisionTargetProvider` (Limelight by default) while preserving AutoAim/AutoSpeed toggles, rumble, and the existing “no tag, no fire” rule, and Phase 2d wires `BaseAuto` tag lock + launcher prep to the same provider selection (Limelight default, webcam fallback) while leaving odometry fusion unchanged for now. Limelight now also latches Obelisk motif tags when selected so tag order telemetry stays live without the legacy webcam stack, and AutoSequence `visionMode(...)` builder calls automatically no-op when the Limelight provider is active so webcam-only profile swaps are ignored safely. Odometry is now field-center–framed (0,0 mid-field; +X right, +Y toward targets) with IMU-only heading and optional Limelight XY fusion using MT2-preferred botpose, two-phase outlier/reacquire gates, motion gating, and clamped correction steps; webcam pose fusion was removed entirely.
 - **2025-11-25** – Integrated reverse-intake control, fused odometry, and AprilTag-aware pose handoff:
 Latched the triple-tap RB gesture so the intake now runs in reverse until the next tap restores the saved intake state, refreshed intake tuning/docs to drop the timed pulse duration, corrected the fireContinuous(label, time, requireLock) AutoSequence builder call in the BaseAuto helper, and updated controller layout/help text for the new reverse workflow. Added fused odometry backed by wheel encoders, IMU heading, and goal-tag corrections with a dedicated odometry/field-layout config plus Dashboard drawing support, exposed a reusable move-to-position sequence with intake-alignment helpers, and enabled FTC Dashboard for both TeleOp and Auto. Tuned odometry to use configurable goal-tag poses (XYZ + yaw) with camera offsets for tag fusion, added a PoseStore handoff so Autonomous writes its final pose for TeleOp reuse, enabled TeleOp INIT AprilTag re-localization with live fused-pose telemetry, documented the Auto/TeleOp pose-seeding and tag-tuning workflow, clarified that setStartingPose(...) is invoked from the Auto class (not the sequence builder), ensured both modes continue blending goal-tag fixes when visible, and seeded human-side autos with default starting poses (BLUE = –12, 0, 0; RED = +12, 0, 0) so odometry INIT telemetry matches staging.
 - **2025-11-23** – Added AutoRPM tweak scaling from the D-pad while AutoSpeed is active (2% per press, configurable), enabled continuous-feed holds that keep the gate open and intake assist running, and added per-call rotate-to-target timeouts (10 s default applied directly in each auto call, now expressed as `10000` ms literals) so AutoSequence scans bail out cleanly; documented the controls and tunables. Extended the AutoSequence `move(...)` step to include a twist offset so moves can finish at a heading relative to their start, refreshed the guide/examples to show the new signature, and updated every autonomous route to pass an explicit `0°` twist while preserving current behavior. Updated AutoSequence moves to steer toward their twist target during translation instead of turning afterward, enabling simultaneous heading changes along the path and documenting the behavior in the AutoSequence guide.

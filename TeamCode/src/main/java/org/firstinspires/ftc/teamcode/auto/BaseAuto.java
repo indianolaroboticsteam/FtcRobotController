@@ -2,31 +2,33 @@ package org.firstinspires.ftc.teamcode.auto;
 
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
-
+import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
-
 import org.firstinspires.ftc.teamcode.Alliance;
+import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
+import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
+import org.firstinspires.ftc.teamcode.config.FeedTuning;
+import org.firstinspires.ftc.teamcode.config.OdometryConfig;
+import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
+import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;
+import org.firstinspires.ftc.teamcode.config.VisionConfig;
+import org.firstinspires.ftc.teamcode.config.VisionTuning;
+import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
-import org.firstinspires.ftc.teamcode.subsystems.Feed;
-import org.firstinspires.ftc.teamcode.subsystems.Intake;
-import org.firstinspires.ftc.teamcode.subsystems.Launcher;
-import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
-import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
-import org.firstinspires.ftc.teamcode.vision.TagAimController;
 import org.firstinspires.ftc.teamcode.odometry.DecodeFieldDrawing;
 import org.firstinspires.ftc.teamcode.odometry.FieldPose;
 import org.firstinspires.ftc.teamcode.odometry.Odometry;
 import org.firstinspires.ftc.teamcode.odometry.PoseStore;
-import org.firstinspires.ftc.teamcode.config.OdometryConfig;
-import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
-import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
-import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
-import org.firstinspires.ftc.teamcode.config.FeedTuning;
-import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
-import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;
-import org.firstinspires.ftc.teamcode.config.VisionTuning;
+import org.firstinspires.ftc.teamcode.subsystems.Feed;
+import org.firstinspires.ftc.teamcode.subsystems.Intake;
+import org.firstinspires.ftc.teamcode.subsystems.Launcher;
+import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
+import org.firstinspires.ftc.teamcode.vision.LimelightTargetProvider;
+import org.firstinspires.ftc.teamcode.vision.TagAimController;
+import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
+import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
+import org.firstinspires.ftc.teamcode.vision.WebcamLegacyTargetProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -149,6 +151,17 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        that hold the gate open while sustaining launcher RPM.
     // CHANGES (2025-11-25): Corrected AutoSequence.fireContinuous(...) to call the BaseAuto helper
     //                        with the proper scope and parameter order so continuous feeds compile and run.
+    // CHANGES (2025-12-09): FTC Dashboard telemetry now mirrors only the Driver Station lines while
+    //                        keeping DecodeFieldDrawing overlays for pose context.
+    // CHANGES (2025-12-11): Wired BaseAuto to select the active VisionTargetProvider (Limelight default,
+    //                        webcam legacy fallback) and route heading/range gating through the provider
+    //                        while leaving odometry pose fusion unchanged for this phase.
+    // CHANGES (2025-12-11): AutoSequence.visionMode(...) now no-ops when Limelight vision is selected so
+    //                        profile swaps remain a webcam-only operation.
+    // CHANGES (2025-12-11): Recentered odometry to the field-center frame (human wall = −72" Y), seeded
+    //                        default start poses accordingly, and enabled Limelight-only XY fusion with
+    //                        MT2 preference, reacquire-friendly outlier gates, motion gating, and
+    //                        clamped correction steps (IMU-only heading).
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -180,6 +193,8 @@ public abstract class BaseAuto extends LinearOpMode {
     // Core subsystems shared by all autos.
     protected Drivebase drive;           // Field-centric mecanum drive helper
     protected VisionAprilTag vision;     // AprilTag pipeline (goal + obelisk)
+    protected Limelight3A limelight;     // Limelight device for heading/distance + XY fusion
+    protected VisionTargetProvider visionTargetProvider; // Unified heading/range provider (Limelight default)
     protected Launcher launcher;         // Flywheel subsystem for scoring
     protected Feed feed;                 // Artifact feed motor controller
     protected Intake intake;             // Intake roller subsystem
@@ -188,7 +203,7 @@ public abstract class BaseAuto extends LinearOpMode {
     protected final TagAimController aim = new TagAimController();
     protected final LauncherAutoSpeedController autoCtrl = new LauncherAutoSpeedController();
     protected Odometry odometry;                     // Fused drive + IMU + AprilTag pose
-    protected FieldPose startPose = new FieldPose(); // Staging pose seeded by derived autos
+    protected FieldPose startPose = new FieldPose(0.0, OdometryConfig.HUMAN_WALL_Y, 0.0); // Staging pose seeded by derived autos
     private boolean visionSeededStart = false;
     protected FtcDashboard dashboard;               // Shared FTC Dashboard instance
 
@@ -244,13 +259,33 @@ public abstract class BaseAuto extends LinearOpMode {
 
         // Create drivetrain with IMU + encoder helpers for field-aligned movement.
         drive = new Drivebase(this);
-        // Initialize AprilTag vision; guard against missing camera on practice bot.
+        limelight = null;
+        // Initialize AprilTag vision (legacy webcam path) and the unified target provider.
         try {
             vision = new VisionAprilTag();
             vision.init(hardwareMap, "Webcam 1");
             try { vision.setRangeScale(VisionTuning.RANGE_SCALE); } catch (Throwable ignored) {}
         } catch (Exception ex) { vision = null; }
-        odometry = new Odometry(drive, vision);
+
+        visionTargetProvider = null;
+        try {
+            VisionConfig.VisionSource source = VisionConfig.VISION_SOURCE;
+            if (source == VisionConfig.VisionSource.WEBCAM_LEGACY) {
+                if (vision != null) {
+                    try { vision.setGoalVisibilityTargetId(allianceGoalTagId()); } catch (Throwable ignored) {}
+                }
+                visionTargetProvider = new WebcamLegacyTargetProvider(vision, this::alliance);
+            } else {
+                limelight = hardwareMap.get(Limelight3A.class, "limelight");
+                try { limelight.getClass().getMethod("setPipelineIndex", int.class)
+                        .invoke(limelight, VisionConfig.LimelightFusion.PIPELINE_INDEX); } catch (Throwable ignored) {}
+                visionTargetProvider = new LimelightTargetProvider(limelight, this::alliance);
+            }
+        } catch (Exception ex) {
+            visionTargetProvider = null;
+        }
+        aim.setProvider(visionTargetProvider);
+        odometry = new Odometry(drive, limelight);
         dashboard = FtcDashboard.getInstance();
         launcher = new Launcher(hardwareMap);   // Flywheel pair
         feed     = new Feed(hardwareMap);       // Indexer wheel
@@ -317,7 +352,6 @@ public abstract class BaseAuto extends LinearOpMode {
                                            double primarySweepDeg,
                                            Double oppositeSweepDeg,
                                            long timeoutMs) {
-        final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
         final String label = (phase == null || phase.isEmpty()) ? "Scan for goal tag" : phase;
@@ -377,17 +411,17 @@ public abstract class BaseAuto extends LinearOpMode {
             }
 
             updateIntakeFlowForAuto();
-            AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
+            VisionTargetProvider provider = visionTargetProvider;
             double bearing = Double.NaN;
             boolean lockedNow = false;
 
-            if (det != null) {
-                Double distanceIn = getScaledDistanceInches(det);
+            if (provider != null && provider.hasTarget()) {
+                Double distanceIn = distanceInchesFromProvider(provider);
                 lockWindow = computeLockWindow(isLongShot(distanceIn), tol);
                 aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
-                double err = det.ftcPose.bearing;
+                double err = provider.getHeadingErrorDeg();
                 bearing = err;
-                double cmd = clamp(aim.turnPower(det), -cap, +cap);
+                double cmd = clamp(aim.turnPower(), -cap, +cap);
                 drive.drive(0, 0, cmd);
                 lockedNow = lockWindow.contains(err);
                 if (lockedNow) {
@@ -488,7 +522,6 @@ public abstract class BaseAuto extends LinearOpMode {
         autoCtrl.setAutoEnabled(true);
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {}
 
-        final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final long settleMs = rpmSettleMs();
         final double tolerance = rpmTol();
         final double fallbackRpm = autoSeedRpm();
@@ -505,15 +538,8 @@ public abstract class BaseAuto extends LinearOpMode {
                 break;
             }
 
-            AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
-            Double distanceIn = null;
-            if (det != null) {
-                double rM = vision.getScaledRange(det);
-                if (!Double.isNaN(rM) && Double.isFinite(rM)) {
-                    distanceIn = rM * M_TO_IN;
-                    hadLock = true;
-                }
-            }
+            Double distanceIn = distanceInchesFromProvider(visionTargetProvider);
+            if (distanceIn != null) { hadLock = true; }
 
             double targetRpm;
             if (distanceIn != null) {
@@ -733,7 +759,6 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     private boolean requireLockOrTimeOut(long guardMs, String phase, ScanDirection direction) {
-        final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
         final String label = (phase == null || phase.isEmpty()) ? "Acquire lock" : phase;
@@ -745,9 +770,9 @@ public abstract class BaseAuto extends LinearOpMode {
 
         while (opModeIsActive() && (System.currentTimeMillis() - start) < guardMs) {
             updateIntakeFlowForAuto();
-            AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
-            if (det != null) {
-                double err = det.ftcPose.bearing;
+            VisionTargetProvider provider = visionTargetProvider;
+            if (provider != null && provider.hasTarget()) {
+                double err = provider.getHeadingErrorDeg();
                 boolean locked = Math.abs(err) <= tol;
                 if (locked) {
                     drive.stopAll();
@@ -756,7 +781,7 @@ public abstract class BaseAuto extends LinearOpMode {
                     telemetry.update();
                     return true;
                 }
-                double cmd = clamp(aim.turnPower(det), -cap, +cap);
+                double cmd = clamp(aim.turnPower(), -cap, +cap);
                 drive.drive(0, 0, cmd * 0.6);
                 updateStatus(label, false);
                 telemetry.addData("Bearing (deg)", err);
@@ -808,18 +833,17 @@ public abstract class BaseAuto extends LinearOpMode {
 
     /** Refresh odometry and return the latest fused pose. */
     protected final FieldPose updateOdometryPose() {
-        AprilTagDetection det = null;
-        if (vision != null) {
-            det = vision.getClosestGoalDetection();
-        }
         if (odometry == null) return new FieldPose();
-        return odometry.update(det);
+        return odometry.update();
     }
 
     private void maybeSeedStartPoseFromVision() {
-        if (visionSeededStart || odometry == null || vision == null) return;
-        AprilTagDetection det = vision.getClosestGoalDetection();
-        FieldPose guess = odometry.computeVisionPose(det, drive.heading());
+        if (visionSeededStart || odometry == null) return;
+        FieldPose guess = odometry.getLastVisionPose();
+        if (guess == null && VisionConfig.VISION_SOURCE == VisionConfig.VisionSource.LIMELIGHT) {
+            odometry.update();
+            guess = odometry.getLastVisionPose();
+        }
         if (guess != null) {
             startPose = guess;
             odometry.setPose(guess.x, guess.y, guess.headingDeg);
@@ -897,43 +921,73 @@ public abstract class BaseAuto extends LinearOpMode {
         if (statusPhase.isEmpty()) {
             statusPhase = "Sequence";
         }
+        List<String> mirroredLines = new ArrayList<>();
+
         telemetry.addData("Phase", statusPhase);
+        mirroredLines.add("Phase: " + statusPhase);
+
         telemetry.addLine("");
+        mirroredLines.add("");
+
         telemetry.addData("Alliance", alliance());
+        mirroredLines.add("Alliance: " + alliance());
+
         telemetry.addData("Auto", autoOpModeName);
-        telemetry.addData("Start Pose", startPoseDescription());
-        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
-        telemetry.addData("AprilTag Lock", tagLocked ? "LOCKED" : "SEARCHING");
+        mirroredLines.add("Auto: " + autoOpModeName);
+
+        String startPoseText = startPoseDescription();
+        telemetry.addData("Start Pose", startPoseText);
+        mirroredLines.add("Start Pose: " + startPoseText);
+
+        String obeliskLine = ObeliskSignal.getDisplay();
+        telemetry.addData("Obelisk", obeliskLine);
+        mirroredLines.add("Obelisk: " + obeliskLine.replace("Obelisk: ", ""));
+
+        String lockLine = tagLocked ? "LOCKED" : "SEARCHING";
+        telemetry.addData("AprilTag Lock", lockLine);
+        mirroredLines.add("AprilTag Lock: " + lockLine);
         if (feed != null) {
             if (feed.wasWindowLimitReached()) {
-                telemetry.addLine("FeedStop: scale window hit bounds – angles trimmed.");
+                String line = "FeedStop: scale window hit bounds – angles trimmed.";
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             } else if (feed.wasAngleClamped()) {
-                telemetry.addLine("FeedStop: angles trimmed to fit available span.");
+                String line = "FeedStop: angles trimmed to fit available span.";
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             }
             if (feed.wasSoftLimitClamped() && feed.getSoftLimitMessage() != null) {
-                telemetry.addLine(feed.getSoftLimitMessage());
+                String line = feed.getSoftLimitMessage();
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             }
             if (feed.wasHomeAborted() && feed.getHomeAbortMessage() != null) {
-                telemetry.addLine("FeedStop: " + feed.getHomeAbortMessage());
+                String line = "FeedStop: " + feed.getHomeAbortMessage();
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             }
-            telemetry.addLine(feed.getFeedStopSummaryLine());
+            String summary = feed.getFeedStopSummaryLine();
+            telemetry.addLine(summary);
+            mirroredLines.add(summary);
         }
         FieldPose poseForDashboard = (odometry != null) ? odometry.getPose() : startPose;
-        sendDashboard(poseForDashboard, statusPhase);
+        sendDashboard(poseForDashboard, statusPhase, mirroredLines);
     }
 
-    private void sendDashboard(FieldPose pose, String statusLabel) {
+    private void sendDashboard(FieldPose pose, String statusLabel, List<String> mirroredLines) {
         if (dashboard == null || pose == null) return;
         TelemetryPacket packet = new TelemetryPacket();
-        packet.put("Status", statusLabel);
-        packet.put("Alliance", alliance().name());
-        packet.put("PoseX", pose.x);
-        packet.put("PoseY", pose.y);
-        packet.put("HeadingDeg", pose.headingDeg);
-        packet.put("AutoSpeedEnabled", autoCtrl != null && autoCtrl.isAutoEnabled());
-        packet.put("LauncherTarget", launcher != null ? launcher.targetRpm : 0.0);
+        if (mirroredLines != null) {
+            for (String line : mirroredLines) {
+                packet.addLine(line);
+            }
+        }
         DecodeFieldDrawing.drawField(packet, pose, alliance(), ObeliskSignal.get());
         dashboard.sendTelemetryPacket(packet);
+    }
+
+    private int allianceGoalTagId() {
+        return (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
     }
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -973,11 +1027,11 @@ public abstract class BaseAuto extends LinearOpMode {
         return distanceIn != null && distanceIn >= AutoAimTuning.LONG_SHOT_DISTANCE_IN;
     }
 
-    private Double getScaledDistanceInches(AprilTagDetection det) {
-        if (vision == null || det == null) {
+    private Double distanceInchesFromProvider(VisionTargetProvider provider) {
+        if (provider == null || !provider.hasTarget()) {
             return null;
         }
-        double rangeM = vision.getScaledRange(det);
+        double rangeM = provider.getDistanceMeters();
         if (Double.isNaN(rangeM) || !Double.isFinite(rangeM)) {
             return null;
         }
@@ -1163,6 +1217,15 @@ public abstract class BaseAuto extends LinearOpMode {
                 lastLock = false;
                 lastAimReady = false;
                 updateStatus(label, false);
+
+                VisionConfig.VisionSource source;
+                try { source = VisionConfig.VISION_SOURCE; }
+                catch (Throwable ignored) { source = VisionConfig.VisionSource.WEBCAM_LEGACY; }
+                if (source == VisionConfig.VisionSource.LIMELIGHT) {
+                    telemetry.addLine("Limelight vision active – skipping profile change");
+                    telemetry.update();
+                    return;
+                }
 
                 VisionTuning.Mode requested = (mode != null) ? mode : VisionTuning.DEFAULT_MODE;
                 telemetry.addData("Requested mode", requested);
