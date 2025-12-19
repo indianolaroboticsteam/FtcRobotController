@@ -142,6 +142,16 @@
  *                       frame (human wall = −72" Y) and moved odometry fusion
  *                       to Limelight-only XY blending with bounded corrections
  *                       (IMU-only heading, no webcam pose fusion).
+<<<<<<< Updated upstream
+=======
+ * CHANGES (2025-12-17): Restored the driver’s AutoAim toggle after releasing a
+ *                       continuous-feed hold so the temporary shot assist no
+ *                       longer latches AutoAim on once streaming stops.
+ * CHANGES (2025-12-21): Gated AutoAim enablement on goal detection + aim-valid
+ *                       heading samples, updated top-line Tag Visible to match
+ *                       detection regardless of heading validity, and mirrored
+ *                       the goal-detected vs. aim-valid split in telemetry.
+>>>>>>> Stashed changes
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -506,12 +516,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Reverse Drive toggle
         controls.bindPress(Pad.G1, Btn.L_STICK_BTN, this::toggleReverseDriveMode);
 
-        // AutoAim toggle (gated by current tag visibility)
-            controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
-                boolean hasGoal = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
-                if (!autoAimEnabled) {
-                    if (hasGoal) {
-                        autoAimEnabled = true;
+        // AutoAim toggle (gated by goal detection + aim-valid heading)
+        controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
+            boolean goalDetected = visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed();
+            boolean goalAimValid = visionTargetProvider != null && visionTargetProvider.isGoalAimValid();
+            if (!autoAimEnabled) {
+                if (goalDetected && goalAimValid) {
+                    autoAimEnabled = true;
                     aimLossStartMs = -1;
                     pulseDouble(gamepad1);
                 } else {
@@ -786,8 +797,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean aimActive = false;
 
         boolean anyTagVisible = visionTargetProvider != null && visionTargetProvider.hasAnyTarget();
+<<<<<<< Updated upstream
         boolean goalVisibleForAim = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
         boolean goalVisibleSmoothed = goalVisibleForAim;
+=======
+        boolean goalDetectedRaw = visionTargetProvider != null && visionTargetProvider.isGoalDetectedRaw();
+        boolean goalDetectedSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed();
+        boolean goalAimValid = visionTargetProvider != null && visionTargetProvider.isGoalAimValid();
+        boolean goalVisibleForAim = goalAimValid;
+        boolean goalVisibleSmoothed = goalDetectedSmoothed;
+>>>>>>> Stashed changes
         double headingDegRaw = visionTargetProvider != null ? visionTargetProvider.getHeadingErrorDeg() : Double.NaN;
         double rangeMetersRaw = visionTargetProvider != null ? visionTargetProvider.getDistanceMeters() : Double.NaN;
         LimelightTargetProvider.DistanceEstimate llDistance = null;
@@ -920,7 +939,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             allianceGoalId = llProvider.getAllianceGoalId();
             visibleIds = llProvider.getVisibleTagIds();
             aimTelemetry = llProvider.getAimTelemetry();
-        } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
+        } else if (visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed()) {
             visibleIds.add(allianceGoalId);
         }
         String visibleIdsStr = joinIds(visibleIds);
@@ -944,6 +963,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
         mirrorData(dashboardLines, "AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "AutoAim", autoAimEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "Reverse", reverseDriveMode ? "ON" : "OFF");
+<<<<<<< Updated upstream
+=======
+        String tagVisibleLine;
+        if (goalDetectedSmoothed) {
+            String headingStr = (smHeadingDeg != null) ? String.format(Locale.US, "%.1f°", smHeadingDeg) : "---";
+            String rangeStr = (smRangeMeters != null) ? String.format(Locale.US, "%.0f\"", smRangeMeters * M_TO_IN) : "---";
+            tagVisibleLine = String.format(Locale.US, "Tag Visible: (#%d, %s, %s)", allianceGoalId, headingStr, rangeStr);
+        } else {
+            tagVisibleLine = "Tag Visible: NO";
+        }
+        mirrorLine(dashboardLines, tagVisibleLine);
+>>>>>>> Stashed changes
         mirrorData(dashboardLines, "RPM Target / Actual", "%.0f / L:%.0f R:%.0f", rpmTarget, rpmLeft, rpmRight);
         if (autoRpmActive && !rpmTestEnabled && Math.abs(autoRpmTweakFactor - 1.0) > 1e-6) {
             double pct = (autoRpmTweakFactor - 1.0) * 100.0;

@@ -61,6 +61,26 @@ import java.util.function.Supplier;
  *                       ignores single-frame dropouts and keeps scanning stable.
  * CHANGES (2025-12-16): Shortened goal tx hold to reduce stale headings while
  *                       the robot is rotating quickly between sightlines.
+<<<<<<< Updated upstream
+=======
+ * CHANGES (2025-12-17): Enforced per-fiducial goal locking for aim/distance,
+ *                       removed global tx fallbacks, and added tunables for
+ *                       lock stale, hysteresis, and confirmation frames so
+ *                       aim control only follows the alliance goal tag.
+ * CHANGES (2025-12-19): Treated per-fiducial detections as goal-visible even
+ *                       when LLResult.isValid() is false so alliance-goal tags
+ *                       always surface heading/range for aim and telemetry as
+ *                       long as a fiducial entry exists.
+ * CHANGES (2025-12-20): Split goal detection from aim usability so visibility
+ *                       follows fiducial presence even when tx is invalid
+ *                       while aim gating still requires a finite heading;
+ *                       added telemetry for observed IDs and goal tx validity.
+ * CHANGES (2025-12-21): Exposed separate goalDetected vs. goalAimValid flags so
+ *                       auto-aim can enable on fiducial presence while still
+ *                       requiring finite tx for rotation; top-level telemetry
+ *                       now keys “Tag Visible” off detection instead of aim
+ *                       validity.
+>>>>>>> Stashed changes
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -111,12 +131,37 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     }
 
     @Override
+<<<<<<< Updated upstream
     public boolean isGoalVisibleRaw() { return hasGoalTarget(); }
+=======
+    public boolean isGoalDetectedRaw() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalDetectedRaw;
+    }
+
+    @Override
+    public boolean isGoalVisibleRaw() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalDetectedRaw;
+    }
+>>>>>>> Stashed changes
+
+    @Override
+    public boolean isGoalDetectedSmoothed() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalDetectedSmoothed;
+    }
 
     @Override
     public boolean isGoalVisibleSmoothed() {
         TargetSnapshot snap = snapshot();
         return snap.goalVisibleSmoothed;
+    }
+
+    @Override
+    public boolean isGoalAimValid() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalAimValid;
     }
 
     @Override
