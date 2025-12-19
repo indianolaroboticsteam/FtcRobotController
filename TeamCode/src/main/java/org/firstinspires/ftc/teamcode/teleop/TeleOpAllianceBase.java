@@ -53,10 +53,6 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
- * CHANGES (2025-12-20): Split goal detection telemetry from aim validity for
- *                       Limelight auto-aim, adding raw goal tx validity and
- *                       observed ID reporting so drivers can see when the goal
- *                       tag is detected even if heading is unusable.
  * CHANGES (2025-12-17): Surfaced per-fiducial Limelight aim lock telemetry
  *                       (locked tx vs. global tx, lock freshness, smoothed
  *                       visibility) so drivers can confirm goal-only aiming
@@ -153,10 +149,6 @@
  * CHANGES (2025-12-17): Restored the driver’s AutoAim toggle after releasing a
  *                       continuous-feed hold so the temporary shot assist no
  *                       longer latches AutoAim on once streaming stops.
- * CHANGES (2025-12-21): Gated AutoAim enablement on goal detection + aim-valid
- *                       heading samples, updated top-line Tag Visible to match
- *                       detection regardless of heading validity, and mirrored
- *                       the goal-detected vs. aim-valid split in telemetry.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -521,13 +513,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Reverse Drive toggle
         controls.bindPress(Pad.G1, Btn.L_STICK_BTN, this::toggleReverseDriveMode);
 
-        // AutoAim toggle (gated by goal detection + aim-valid heading)
-        controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
-            boolean goalDetected = visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed();
-            boolean goalAimValid = visionTargetProvider != null && visionTargetProvider.isGoalAimValid();
-            if (!autoAimEnabled) {
-                if (goalDetected && goalAimValid) {
-                    autoAimEnabled = true;
+        // AutoAim toggle (gated by current tag visibility)
+            controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
+                boolean hasGoal = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
+                if (!autoAimEnabled) {
+                    if (hasGoal) {
+                        autoAimEnabled = true;
                     aimLossStartMs = -1;
                     pulseDouble(gamepad1);
                 } else {
@@ -802,11 +793,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean aimActive = false;
 
         boolean anyTagVisible = visionTargetProvider != null && visionTargetProvider.hasAnyTarget();
-        boolean goalDetectedRaw = visionTargetProvider != null && visionTargetProvider.isGoalDetectedRaw();
-        boolean goalDetectedSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed();
-        boolean goalAimValid = visionTargetProvider != null && visionTargetProvider.isGoalAimValid();
-        boolean goalVisibleForAim = goalAimValid;
-        boolean goalVisibleSmoothed = goalDetectedSmoothed;
+        boolean goalVisibleForAim = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
+        boolean goalVisibleSmoothed = goalVisibleForAim;
         double headingDegRaw = visionTargetProvider != null ? visionTargetProvider.getHeadingErrorDeg() : Double.NaN;
         double rangeMetersRaw = visionTargetProvider != null ? visionTargetProvider.getDistanceMeters() : Double.NaN;
         LimelightTargetProvider.DistanceEstimate llDistance = null;
@@ -939,7 +927,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             allianceGoalId = llProvider.getAllianceGoalId();
             visibleIds = llProvider.getVisibleTagIds();
             aimTelemetry = llProvider.getAimTelemetry();
-        } else if (visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed()) {
+        } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
             visibleIds.add(allianceGoalId);
         }
         String visibleIdsStr = joinIds(visibleIds);
@@ -964,10 +952,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         mirrorData(dashboardLines, "AutoAim", autoAimEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "Reverse", reverseDriveMode ? "ON" : "OFF");
         String tagVisibleLine;
-        if (goalDetectedSmoothed) {
-            String headingStr = (smHeadingDeg != null) ? String.format(Locale.US, "%.1f°", smHeadingDeg) : "---";
-            String rangeStr = (smRangeMeters != null) ? String.format(Locale.US, "%.0f\"", smRangeMeters * M_TO_IN) : "---";
-            tagVisibleLine = String.format(Locale.US, "Tag Visible: (#%d, %s, %s)", allianceGoalId, headingStr, rangeStr);
+        if (goalVisibleForAim && smHeadingDeg != null && smRangeMeters != null) {
+            tagVisibleLine = String.format(Locale.US, "Tag Visible: (#%d, %.1f°, %.0f\")", allianceGoalId, smHeadingDeg, smRangeMeters * M_TO_IN);
         } else {
             tagVisibleLine = "Tag Visible: NO";
         }
@@ -986,7 +972,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (manualRpmLocked) mirrorData(dashboardLines, "ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
         mirrorData(dashboardLines, "RT", "%.2f", gamepad1.right_trigger);
         if (autoAimEnabled) mirrorData(dashboardLines, "SpeedScale", "%.2f", appliedAimSpeedScale);
-        mirrorData(dashboardLines, "Tag Visible (goal)", goalDetectedSmoothed ? "YES" : "NO");
+        mirrorData(dashboardLines, "Tag Visible (goal)", goalVisibleForAim ? "YES" : "NO");
         mirrorData(dashboardLines, "Tag Visible (any)", anyTagVisible ? "YES" : "NO");
         mirrorData(dashboardLines, "Aim Debug", String.format(Locale.US,
                 "shotAssist=%s aimActive=%s hasGoalTarget=%s errDeg=%.1f aimRaw=%s aimInv=%s driverRot=%.3f finalRot=%.3f",
@@ -999,10 +985,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 driverRot,
                 finalRot));
         mirrorData(dashboardLines, "LL: valid/goal/best", String.format(Locale.US,
-                "valid=%s anyVisible=%s goalDetected=%s aimValid=%s bestId=%s",
+                "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
                 anyTagVisible,
                 anyTagVisible,
-                goalDetectedSmoothed,
                 goalVisibleForAim,
                 (bestTagId < 0) ? "-" : String.valueOf(bestTagId)));
         mirrorData(dashboardLines, "LL: allianceGoalId/ids", String.format(Locale.US,
@@ -1013,18 +998,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
             String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
             String aimTxUsed = aimTelemetry.txLockedUsedDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txLockedUsedDeg) : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
-            boolean goalTxFinite = aimTelemetry.goalTxDeg != null && Double.isFinite(aimTelemetry.goalTxDeg);
-            String goalTxRaw = aimTelemetry.goalTxDeg == null ? "null" : String.format(Locale.US, "%.2f", aimTelemetry.goalTxDeg);
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "detected=%s smoothed=%s aimValid=%s lockFresh=%s locked=%s txUsed=%s goalTx=%s finite=%s ageMs=%s ids=%s",
-                    aimTelemetry.goalDetected,
-                    aimTelemetry.goalDetectedSmoothed,
-                    aimTelemetry.goalAimValid,
+                    "goalVisible=%s smoothed=%s lockFresh=%s locked=%s tx=%s ageMs=%s ids=%s",
+                    aimTelemetry.goalVisible,
+                    aimTelemetry.goalVisibleSmoothed,
                     aimTelemetry.lockFresh,
                     lockedId,
                     aimTxUsed,
-                    goalTxRaw,
-                    goalTxFinite,
                     lockAgeMs,
                     joinIds(aimTelemetry.visibleIds)));
         }
