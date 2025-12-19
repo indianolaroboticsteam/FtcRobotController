@@ -59,6 +59,7 @@ public final class AutoRpmConfig {
             2600.0,
             2650.0,
             2800.0,
+            3000.0,
             3200.0,
             3900.0,
             4250.0
