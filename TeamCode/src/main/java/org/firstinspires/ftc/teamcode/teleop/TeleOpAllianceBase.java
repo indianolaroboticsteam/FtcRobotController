@@ -53,10 +53,6 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
- * CHANGES (2025-12-17): Surfaced per-fiducial Limelight aim lock telemetry
- *                       (locked tx vs. global tx, lock freshness, smoothed
- *                       visibility) so drivers can confirm goal-only aiming
- *                       no longer jumps to obelisk detections.
  * CHANGES (2025-11-29): Surfaced AutoRPM tweak telemetry (D-pad left/right while
  *                       AutoSpeed is active) with percentage and RPM deltas so
  *                       drivers can see the live nudge under the RPM target
@@ -146,9 +142,6 @@
  *                       frame (human wall = −72" Y) and moved odometry fusion
  *                       to Limelight-only XY blending with bounded corrections
  *                       (IMU-only heading, no webcam pose fusion).
- * CHANGES (2025-12-17): Restored the driver’s AutoAim toggle after releasing a
- *                       continuous-feed hold so the temporary shot assist no
- *                       longer latches AutoAim on once streaming stops.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -951,13 +944,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         mirrorData(dashboardLines, "AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "AutoAim", autoAimEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "Reverse", reverseDriveMode ? "ON" : "OFF");
-        String tagVisibleLine;
-        if (goalVisibleForAim && smHeadingDeg != null && smRangeMeters != null) {
-            tagVisibleLine = String.format(Locale.US, "Tag Visible: (#%d, %.1f°, %.0f\")", allianceGoalId, smHeadingDeg, smRangeMeters * M_TO_IN);
-        } else {
-            tagVisibleLine = "Tag Visible: NO";
-        }
-        mirrorLine(dashboardLines, tagVisibleLine);
         mirrorData(dashboardLines, "RPM Target / Actual", "%.0f / L:%.0f R:%.0f", rpmTarget, rpmLeft, rpmRight);
         if (autoRpmActive && !rpmTestEnabled && Math.abs(autoRpmTweakFactor - 1.0) > 1e-6) {
             double pct = (autoRpmTweakFactor - 1.0) * 100.0;
@@ -996,13 +982,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 visibleIdsStr));
         if (aimTelemetry != null) {
             String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
-            String aimTxUsed = aimTelemetry.txLockedUsedDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txLockedUsedDeg) : "-";
+            String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "goalVisible=%s smoothed=%s lockFresh=%s locked=%s tx=%s ageMs=%s ids=%s",
+                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
                     aimTelemetry.goalVisible,
-                    aimTelemetry.goalVisibleSmoothed,
-                    aimTelemetry.lockFresh,
                     lockedId,
                     aimTxUsed,
                     lockAgeMs,
@@ -1649,17 +1633,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         pendingAutoAimNudge = true;
     }
 
-    /** Restores the driver-selected AutoAim state after a shot assist. */
-    private void restoreAutoAimNudgeIfActive() {
-        if (!autoAimNudgeActive) {
-            return;
-        }
-        autoAimEnabled = autoAimNudgeRestoreState;
-        autoAimNudgeActive = false;
-        pendingAutoAimNudge = false;
-        aimLossStartMs = -1L;
-    }
-
     /** Enables a temporary AutoAim assist when a tag is visible, then restores the prior setting after firing. */
     private void updateAutoAimNudge(boolean hasGoalTarget) {
         boolean firingActive = feed != null && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
@@ -1675,7 +1648,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         if (autoAimNudgeActive && !firingActive) {
-            restoreAutoAimNudgeIfActive();
+            autoAimEnabled = autoAimNudgeRestoreState;
+            autoAimNudgeActive = false;
+            pendingAutoAimNudge = false;
+            aimLossStartMs = -1L;
         }
     }
 
@@ -1857,7 +1833,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         } else if (continuousFireActive) {
             feed.stopContinuousFeed();
             continuousFireActive = false;
-            restoreAutoAimNudgeIfActive();
         }
     }
 
