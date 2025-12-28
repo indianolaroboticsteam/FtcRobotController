@@ -80,13 +80,11 @@ public class Auto_Red_Target extends BaseAuto {
                 .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 3, true, 300)
-                //.fireContinuous("Firing",3000,true)
                 .returnToStoredHeading("Return to start heading", 0.45)
                 .move("Drive to balls", 26.0, 90.0, -45.0, 0.85)
                 .move("Drive backward", 26.0, 180.0, 0.0, 0.85)
                 .move("Drive to triangle", 44.0, -15.0, -135.0, 0.85)
-                //.fire("Fire volley", 3, true, 100)
-                .fireContinuous("Firing",3000,true)
+                .fire("Fire volley", 3, true, 100)
                 //.waitFor("Hold position", 500)
                 .run();
     }
