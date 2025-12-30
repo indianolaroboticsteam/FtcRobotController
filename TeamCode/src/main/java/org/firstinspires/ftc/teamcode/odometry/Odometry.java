@@ -74,6 +74,10 @@ public class Odometry {
     private FieldPose lastRawVisionPose = null;
     private FieldPose lastRawBluePose = null;
     private FieldPose lastRawRedPose = null;
+    private Double lastRawXmeters = null;
+    private Double lastRawYmeters = null;
+    private Double lastRawXin = null;
+    private Double lastRawYin = null;
     private final double[] lastWheelDeltaRaw = new double[4];
     private final double[] lastWheelDeltaScaled = new double[4];
     private final int[] lastWheelDeltaTicks = new int[4];
@@ -252,6 +256,7 @@ public class Odometry {
 
         updateRawFrameDebug(result);
 
+        updateRawPoseDebug(pose3D);
         double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y, true);
         double vx = xy[0];
         double vy = xy[1];
@@ -426,6 +431,10 @@ public class Odometry {
         lastRawVisionPose = null;
         lastRawBluePose = null;
         lastRawRedPose = null;
+        lastRawXmeters = null;
+        lastRawYmeters = null;
+        lastRawXin = null;
+        lastRawYin = null;
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -438,6 +447,8 @@ public class Odometry {
         String rawStr = formatPoint(lastRawVisionPose);
         String rawBlueStr = formatPoint(lastRawBluePose);
         String rawRedStr = formatPoint(lastRawRedPose);
+        String llXYmStr = formatXYMeters();
+        String llXYinStr = formatXYInches();
         String accStr = formatPoint(lastVisionPose);
         String fusedStr = formatPoint(pose);
         String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
@@ -451,7 +462,7 @@ public class Odometry {
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastLocalizationFilterMs))
                 : "--";
         visionDebugLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s rawBlue=%s rawRed=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s rawBlue=%s rawRed=%s llXYm=%s llXYin=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
@@ -469,12 +480,40 @@ public class Odometry {
                 errStr,
                 lastRejectReason,
                 rawBlueStr,
-                rawRedStr);
+                rawRedStr,
+                llXYmStr,
+                llXYinStr);
+    }
+
+    private void updateRawPoseDebug(Pose3D pose3D) {
+        if (pose3D == null || pose3D.getPosition() == null) return;
+        lastRawXmeters = pose3D.getPosition().x;
+        lastRawYmeters = pose3D.getPosition().y;
+        lastRawXin = lastRawXmeters * M_TO_IN;
+        lastRawYin = lastRawYmeters * M_TO_IN;
+    }
+
+    private String formatXYMeters() {
+        if (lastRawXmeters == null || lastRawYmeters == null) return "--,--";
+        return String.format(Locale.US, "%.1f,%.1f", lastRawXmeters, lastRawYmeters);
+    }
+
+    private String formatXYInches() {
+        if (lastRawXin == null || lastRawYin == null) return "--,--";
+        return String.format(Locale.US, "%.1f,%.1f", lastRawXin, lastRawYin);
     }
 
     private void updateRawFrameDebug(LLResult result) {
-        Pose3D bluePose = LimelightHelpers.getBotposeMT2Blue(result);
-        Pose3D redPose = LimelightHelpers.getBotposeMT2Red(result);
+        Pose3D bluePose = readMt2PoseFromHelpers(result,
+                "getBotposeMT2Blue",
+                "getBotpose_MT2_WPIBlue",
+                "getBotpose_MT2_Blue",
+                "getBotpose_MT2_blue");
+        Pose3D redPose = readMt2PoseFromHelpers(result,
+                "getBotposeMT2Red",
+                "getBotpose_MT2_WPIRed",
+                "getBotpose_MT2_Red",
+                "getBotpose_MT2_red");
 
         if (bluePose != null && bluePose.getPosition() != null) {
             double[] blueXY = transformVisionXY(bluePose.getPosition().x, bluePose.getPosition().y, false);
@@ -485,6 +524,29 @@ public class Odometry {
             double[] redXY = transformVisionXY(redPose.getPosition().x, redPose.getPosition().y, false);
             lastRawRedPose = new FieldPose(redXY[0], redXY[1], pose.headingDeg);
         }
+    }
+
+    private Pose3D readMt2PoseFromHelpers(LLResult result, String helperMethod, String... resultMethods) {
+        if (result == null) return null;
+        try {
+            Object value = LimelightHelpers.class
+                    .getMethod(helperMethod, LLResult.class)
+                    .invoke(null, result);
+            if (value instanceof Pose3D) {
+                return (Pose3D) value;
+            }
+        } catch (Throwable ignored) {
+        }
+        for (String method : resultMethods) {
+            try {
+                Object value = result.getClass().getMethod(method).invoke(result);
+                if (value instanceof Pose3D) {
+                    return (Pose3D) value;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 
     private void updateOdometryDebugLine() {
