@@ -56,9 +56,6 @@ import static java.lang.Math.*;
  *                        orientation calls (SetRobotOrientation / setRobotOrientation),
  *                        added yaw/filter age telemetry, and preferred Helpers
  *                        fiducial override calls with Limelight3A fallback.
- * CHANGES (2025-12-30): Switched MT2 localization to the LimelightHelpers
- *                        PoseEstimate wpiBlue stream and made the corner→center
- *                        shift configurable via APPLY_CENTER_SHIFT.
  */
 public class Odometry {
 
@@ -77,10 +74,12 @@ public class Odometry {
     private FieldPose lastRawVisionPose = null;
     private FieldPose lastRawBluePose = null;
     private FieldPose lastRawRedPose = null;
-    private Double lastRawXmeters = null;
-    private Double lastRawYmeters = null;
-    private Double lastRawXin = null;
-    private Double lastRawYin = null;
+    private Double lastMt2Xmeters = null;
+    private Double lastMt2Ymeters = null;
+    private Double lastMt2Xin = null;
+    private Double lastMt2Yin = null;
+    private String lastMt2Src = "--";
+    private int lastMt2TagCount = -1;
     private final double[] lastWheelDeltaRaw = new double[4];
     private final double[] lastWheelDeltaScaled = new double[4];
     private final int[] lastWheelDeltaTicks = new int[4];
@@ -230,23 +229,33 @@ public class Odometry {
             return base;
         }
         lastPrimaryTagId = readPrimaryTagId(result);
+        lastVisibleTagCount = countFiducials(result);
 
-        LimelightHelpers.PoseEstimate mt2 = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2(
-                VisionConfig.LimelightFusion.LL_NT_NAME);
-        if (mt2 == null || mt2.pose == null || mt2.tagCount <= 0) {
+        LlPoseSample mt2Sample = getLimelightMt2BluePose(VisionConfig.LimelightFusion.LL_NT_NAME);
+        Pose3D fallbackPose = result.getBotpose();
+        boolean useMt2 = mt2Sample.ok && (mt2Sample.tagCount != 0);
+        Pose3D pose3D = useMt2 ? mt2Sample.pose3d : fallbackPose;
+        lastPoseUsedMt2 = useMt2;
+        lastMt2Src = mt2Sample.src;
+        lastMt2TagCount = mt2Sample.tagCount;
+        updateRawMt2Debug(mt2Sample);
+
+        if (pose3D == null || pose3D.getPosition() == null) {
             validVisionStreak = 0;
             lastRejectReason = "NULL";
             return base;
         }
-        lastPoseUsedMt2 = true;
-        lastVisibleTagCount = mt2.tagCount;
 
         long nowMs = System.currentTimeMillis();
-        lastVisionAgeMs = readPoseAgeMs(mt2, result, nowMs);
-        if (lastVisionAgeMs != null && lastVisionAgeMs > VisionConfig.LimelightFusion.MAX_AGE_MS) {
-            validVisionStreak = 0;
-            lastRejectReason = "AGE";
-            return base;
+        Long timestampMs = readTimestampMs(result);
+        if (timestampMs != null) {
+            long ageMs = nowMs - timestampMs;
+            lastVisionAgeMs = ageMs;
+            if (ageMs > VisionConfig.LimelightFusion.MAX_AGE_MS) {
+                validVisionStreak = 0;
+                lastRejectReason = "AGE";
+                return base;
+            }
         }
 
         validVisionStreak++;
@@ -257,13 +266,11 @@ public class Odometry {
 
         updateRawFrameDebug(result);
 
-        updateRawPoseDebugMeters(mt2.pose.x, mt2.pose.y);
-        double[] rawXY = llWpiBlueToFieldXYIn(mt2.pose.x, mt2.pose.y, false);
-        lastRawVisionPose = new FieldPose(rawXY[0], rawXY[1], base.headingDeg);
-
-        double[] xy = llWpiBlueToFieldXYIn(mt2.pose.x, mt2.pose.y, true);
+        double[] rawXY = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y, false);
+        double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y, true);
         double vx = xy[0];
         double vy = xy[1];
+        lastRawVisionPose = new FieldPose(rawXY[0], rawXY[1], base.headingDeg);
         if (!isWithinFieldBounds(vx, vy)) {
             validVisionStreak = 0;
             lastRejectReason = "BOUNDS";
@@ -306,7 +313,7 @@ public class Odometry {
         return corrected;
     }
 
-    private double[] llWpiBlueToFieldXYIn(double xMeters, double yMeters, boolean applyOffset) {
+    private double[] transformVisionXY(double xMeters, double yMeters, boolean applyOffset) {
         double xIn = xMeters * M_TO_IN;
         double yIn = yMeters * M_TO_IN;
 
@@ -431,10 +438,12 @@ public class Odometry {
         lastRawVisionPose = null;
         lastRawBluePose = null;
         lastRawRedPose = null;
-        lastRawXmeters = null;
-        lastRawYmeters = null;
-        lastRawXin = null;
-        lastRawYin = null;
+        lastMt2Xmeters = null;
+        lastMt2Ymeters = null;
+        lastMt2Xin = null;
+        lastMt2Yin = null;
+        lastMt2Src = "--";
+        lastMt2TagCount = -1;
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -461,11 +470,8 @@ public class Odometry {
         String fltAgeStr = (lastLocalizationFilterMs > 0L)
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastLocalizationFilterMs))
                 : "--";
-        String xyDebug = VisionConfig.LimelightFusion.DEBUG_VERBOSE_VISION
-                ? String.format(Locale.US, " llXYm=%s llXYin=%s", llXYmStr, llXYinStr)
-                : "";
-        visionDebugLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s rawBlue=%s rawRed=%s%s",
+        String baseLine = String.format(Locale.US,
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s mt2=%s mt2src=%s mt2tags=%d age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s llXYm=%s llXYin=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
@@ -474,6 +480,8 @@ public class Odometry {
                 fltAgeStr,
                 VisionConfig.LimelightFusion.LL_NT_NAME,
                 lastPoseUsedMt2,
+                lastMt2Src,
+                lastMt2TagCount,
                 ageStr,
                 tidStr,
                 lastVisibleTagCount,
@@ -482,39 +490,27 @@ public class Odometry {
                 fusedStr,
                 errStr,
                 lastRejectReason,
-                rawBlueStr,
-                rawRedStr,
-                xyDebug);
-    }
-
-    private void updateRawPoseDebugMeters(double xMeters, double yMeters) {
-        lastRawXmeters = xMeters;
-        lastRawYmeters = yMeters;
-        lastRawXin = lastRawXmeters * M_TO_IN;
-        lastRawYin = lastRawYmeters * M_TO_IN;
+                llXYmStr,
+                llXYinStr);
+        if (VisionConfig.LimelightFusion.DEBUG_VERBOSE_VISION) {
+            visionDebugLine = baseLine + String.format(Locale.US, " rawBlue=%s rawRed=%s", rawBlueStr, rawRedStr);
+        } else {
+            visionDebugLine = baseLine;
+        }
     }
 
     private String formatXYMeters() {
-        if (lastRawXmeters == null || lastRawYmeters == null) return "--,--";
-        return String.format(Locale.US, "%.1f,%.1f", lastRawXmeters, lastRawYmeters);
+        if (lastMt2Xmeters == null || lastMt2Ymeters == null) return "--,--";
+        return String.format(Locale.US, "%.1f,%.1f", lastMt2Xmeters, lastMt2Ymeters);
     }
 
     private String formatXYInches() {
-        if (lastRawXin == null || lastRawYin == null) return "--,--";
-        return String.format(Locale.US, "%.1f,%.1f", lastRawXin, lastRawYin);
-    }
-
-    private Long readPoseAgeMs(LimelightHelpers.PoseEstimate mt2, LLResult result, long nowMs) {
-        if (mt2 != null && mt2.timestampSeconds > 0.0) {
-            long ageMs = nowMs - Math.round(mt2.timestampSeconds * 1000.0);
-            return Math.max(0L, ageMs);
-        }
-        Long timestampMs = readTimestampMs(result);
-        if (timestampMs == null) return null;
-        return Math.max(0L, nowMs - timestampMs);
+        if (lastMt2Xin == null || lastMt2Yin == null) return "--,--";
+        return String.format(Locale.US, "%.1f,%.1f", lastMt2Xin, lastMt2Yin);
     }
 
     private void updateRawFrameDebug(LLResult result) {
+        if (!VisionConfig.LimelightFusion.DEBUG_VERBOSE_VISION) return;
         Pose3D bluePose = readMt2PoseFromHelpers(result,
                 "getBotposeMT2Blue",
                 "getBotpose_MT2_WPIBlue",
@@ -527,12 +523,12 @@ public class Odometry {
                 "getBotpose_MT2_red");
 
         if (bluePose != null && bluePose.getPosition() != null) {
-            double[] blueXY = llWpiBlueToFieldXYIn(bluePose.getPosition().x, bluePose.getPosition().y, false);
+            double[] blueXY = transformVisionXY(bluePose.getPosition().x, bluePose.getPosition().y, false);
             lastRawBluePose = new FieldPose(blueXY[0], blueXY[1], pose.headingDeg);
         }
 
         if (redPose != null && redPose.getPosition() != null) {
-            double[] redXY = llWpiBlueToFieldXYIn(redPose.getPosition().x, redPose.getPosition().y, false);
+            double[] redXY = transformVisionXY(redPose.getPosition().x, redPose.getPosition().y, false);
             lastRawRedPose = new FieldPose(redXY[0], redXY[1], pose.headingDeg);
         }
     }
@@ -558,6 +554,149 @@ public class Odometry {
             }
         }
         return null;
+    }
+
+    private void updateRawMt2Debug(LlPoseSample sample) {
+        if (!sample.ok) return;
+        lastMt2Xmeters = sample.xMeters;
+        lastMt2Ymeters = sample.yMeters;
+        lastMt2Xin = lastMt2Xmeters * M_TO_IN;
+        lastMt2Yin = lastMt2Ymeters * M_TO_IN;
+    }
+
+    private LlPoseSample getLimelightMt2BluePose(String llName) {
+        LlPoseSample sample = new LlPoseSample();
+        if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2) return sample;
+        if (limelight == null) return sample;
+
+        Object estimate = invokeHelpersMethod(llName,
+                "getBotPoseEstimate_wpiBlue_MegaTag2",
+                "getBotPoseEstimate_wpiblue_MegaTag2",
+                "getBotPoseEstimate_wpiBlueMegaTag2");
+        if (estimate != null) {
+            PoseEstimateFields fields = readPoseEstimateFields(estimate);
+            if (fields.ok) {
+                sample.ok = true;
+                sample.xMeters = fields.xMeters;
+                sample.yMeters = fields.yMeters;
+                sample.yawDeg = fields.yawDeg;
+                sample.tagCount = fields.tagCount;
+                sample.timestampSeconds = fields.timestampSeconds;
+                sample.src = fields.src;
+                sample.pose3d = fields.pose3d;
+                return sample;
+            }
+        }
+
+        Object arr = invokeHelpersMethod(llName,
+                "getBotPose_wpiBlue_MegaTag2",
+                "getBotPose_wpiblue_MegaTag2",
+                "getBotPose_wpiBlueMegaTag2",
+                "getBotPose_wpiBlue");
+        if (arr instanceof double[]) {
+            double[] data = (double[]) arr;
+            if (data.length >= 2) {
+                sample.ok = true;
+                sample.xMeters = data[0];
+                sample.yMeters = data[1];
+                sample.yawDeg = (data.length > 5) ? data[5] : Double.NaN;
+                sample.tagCount = -1;
+                sample.timestampSeconds = Double.NaN;
+                sample.src = "double[]";
+                sample.pose3d = buildPose3d(sample.xMeters, sample.yMeters, 0.0);
+                return sample;
+            }
+        }
+
+        Pose3D pose3D = null;
+        try {
+            pose3D = LimelightHelpers.getBotposeMT2Blue(limelight.getLatestResult());
+        } catch (Throwable ignored) { }
+        if (pose3D != null && pose3D.getPosition() != null) {
+            sample.ok = true;
+            sample.xMeters = pose3D.getPosition().x;
+            sample.yMeters = pose3D.getPosition().y;
+            sample.yawDeg = Double.NaN;
+            sample.tagCount = -1;
+            sample.timestampSeconds = Double.NaN;
+            sample.src = "helpersPose3D";
+            sample.pose3d = pose3D;
+        }
+        return sample;
+    }
+
+    private Object invokeHelpersMethod(String llName, String... methods) {
+        for (String method : methods) {
+            try {
+                return LimelightHelpers.class.getMethod(method, String.class).invoke(null, llName);
+            } catch (Throwable ignored) { }
+        }
+        return null;
+    }
+
+    private PoseEstimateFields readPoseEstimateFields(Object estimate) {
+        PoseEstimateFields fields = new PoseEstimateFields();
+        fields.src = estimate.getClass().getSimpleName();
+        try {
+            Object pose3d = estimate.getClass().getField("pose").get(estimate);
+            if (pose3d instanceof Pose3D) {
+                fields.pose3d = (Pose3D) pose3d;
+                fields.xMeters = fields.pose3d.getPosition().x;
+                fields.yMeters = fields.pose3d.getPosition().y;
+            }
+        } catch (Throwable ignored) { }
+        try {
+            Object tagCount = estimate.getClass().getField("tagCount").get(estimate);
+            if (tagCount instanceof Number) {
+                fields.tagCount = ((Number) tagCount).intValue();
+            }
+        } catch (Throwable ignored) { }
+        try {
+            Object timestamp = estimate.getClass().getField("timestampSeconds").get(estimate);
+            if (timestamp instanceof Number) {
+                fields.timestampSeconds = ((Number) timestamp).doubleValue();
+            }
+        } catch (Throwable ignored) { }
+        fields.ok = fields.pose3d != null;
+        return fields;
+    }
+
+    private Pose3D buildPose3d(double xMeters, double yMeters, double zMeters) {
+        return new Pose3D(
+                new org.firstinspires.ftc.robotcore.external.navigation.Position(
+                        org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit.METER,
+                        xMeters,
+                        yMeters,
+                        zMeters,
+                        0L),
+                new org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles(
+                        org.firstinspires.ftc.robotcore.external.navigation.AngleUnit.DEGREES,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0L));
+    }
+
+    private static class LlPoseSample {
+        private boolean ok = false;
+        private double xMeters = Double.NaN;
+        private double yMeters = Double.NaN;
+        private double yawDeg = Double.NaN;
+        private int tagCount = -1;
+        private double timestampSeconds = Double.NaN;
+        private String src = "--";
+        private Pose3D pose3d = null;
+    }
+
+    private static class PoseEstimateFields {
+        private boolean ok = false;
+        private double xMeters = Double.NaN;
+        private double yMeters = Double.NaN;
+        private double yawDeg = Double.NaN;
+        private int tagCount = -1;
+        private double timestampSeconds = Double.NaN;
+        private String src = "--";
+        private Pose3D pose3d = null;
     }
 
     private void updateOdometryDebugLine() {
