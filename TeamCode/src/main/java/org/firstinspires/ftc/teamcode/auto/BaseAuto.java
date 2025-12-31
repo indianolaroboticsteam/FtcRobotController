@@ -198,8 +198,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        dashboard poses use fresh odometry updates each loop.
     // CHANGES (2025-12-31): Ensured Auto saves the final fused pose on stop/cleanup, removed
     //                        double-update dashboard paths, and aligned heading offset telemetry
-    // CHANGES (2025-12-31): Deferred FeedStop opening in continuous-fire steps until the launcher
-    //                        is inside the RPM tolerance window.
+    // CHANGES (2025-12-31): Allowed FeedStop to open while continuous-fire waits on RPM readiness,
+    //                        gating the feed motor instead of the gate motion.
     //                        with the IMU seed definition.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
@@ -813,6 +813,7 @@ public abstract class BaseAuto extends LinearOpMode {
         }
         launcher.setTargetRpm(holdTarget);
 
+        feed.setRelease();
         long settleMs = rpmSettleMs();
         long settleStart = -1L;
         while (opModeIsActive()) {
