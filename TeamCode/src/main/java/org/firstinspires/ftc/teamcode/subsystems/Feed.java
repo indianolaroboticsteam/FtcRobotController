@@ -78,6 +78,8 @@ public class Feed {
     //                       while still queuing homing for the first post-START loops.
     // CHANGES (2025-12-31): Started the FeedStop return timer only when the feed motor begins
     //                       moving so the gate stays open until the shot actually fires.
+    // CHANGES (2025-12-31): Clarified feed gating uses a ±RPM readiness window so overspeed is
+    //                       treated the same as underspeed.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed

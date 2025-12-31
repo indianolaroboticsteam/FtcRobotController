@@ -180,6 +180,8 @@
  * CHANGES (2025-12-31): Gated the feed motor (not the FeedStop) on launcher RPM
  *                       readiness, queued single/continuous fire requests until
  *                       at speed, and restored the temporary AutoAim nudge on fire.
+ * CHANGES (2025-12-31): Clarified that launcher readiness uses a ±RPM tolerance
+ *                       band so overspeed is treated the same as underspeed.
  */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -1829,7 +1831,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
     }
 
-    /** Returns true once the launcher has stayed within the RPM window long enough to feed. */
+    /** Returns true once the launcher has stayed within the ±RPM window long enough to feed. */
     private boolean isLauncherReadyForFeed(long nowMs) {
         if (launcher == null) {
             launcherReadyStartMs = 0L;
@@ -1839,7 +1841,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             launcherReadyStartMs = 0L;
             return false;
         }
-        double tolerance = SharedRobotTuning.RPM_TOLERANCE;
+        double tolerance = SharedRobotTuning.RPM_TOLERANCE; // ±RPM window; overspeed is treated like underspeed
         double error = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm);
         if (error <= tolerance) {
             if (launcherReadyStartMs == 0L) {
