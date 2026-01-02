@@ -83,8 +83,10 @@ public class Auto_Red_Target extends BaseAuto {
                 .returnToStoredHeading("Return to start heading", 0.45)
                 .move("Drive to balls", 26.0, 90.0, -45.0, 0.85)
                 .move("Drive backward", 26.0, 180.0, 0.0, 0.85)
-                .move("Drive to triangle", 44.0, -15.0, -135.0, 0.85)
-                .fire("Fire volley", 3, true, 100)
+                .move("Drive to triangle", 48.0, -15.0, -135.0, 0.85)
+                //.fire("Fire volley", 3, false, 0)
+                .readyToLaunch("Ready launcher for volley", 500)
+                .fireContinuous("firing",1500,true)
                 //.waitFor("Hold position", 500)
                 .run();
     }
