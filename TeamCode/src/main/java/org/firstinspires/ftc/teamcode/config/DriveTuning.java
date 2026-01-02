@@ -53,6 +53,6 @@ public final class DriveTuning {
     public static double TURN_SETTLE_TIME_SEC = 0.15; // Seconds inside tolerance before declaring done
 
     // Auto translation taper floors (prevent stalling near completion)
-    public static double AUTO_MOVE_MIN_SPEED                 = 0.15; // Min speed for encoder-delta move() ramp
-    public static double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = 0.15; // Min translation speed for moveWithTwist() ramp
+    public static double AUTO_MOVE_MIN_SPEED                 = 0.5; // Min speed for encoder-delta move() ramp
+    public static double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = 0.5; // Min translation speed for moveWithTwist() ramp
 }
