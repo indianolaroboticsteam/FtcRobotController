@@ -63,6 +63,7 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Encoder-based translation with controlled tapering.
 - Twist-enabled moves keep translation locked to the requested field heading while steering toward the target yaw, with encoder-derived distance tracking that remains accurate during simultaneous rotation.
 - Shared across TeleOp and Auto.
+ - Auto encoder moves now abort early when a stall is detected (non-zero command but velocity/error progress remain below thresholds for a tuned window), preventing autos from wasting time pushing into walls.
  - Encoder distance math assumes 1× (non-quadrature) counts per revolution in `DriveTuning.TICKS_PER_REV`; only use 4× counts if the hub actually reports quadrature ticks.
 
 #### 🚀 Movement speed constraints to watch
@@ -141,6 +142,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - TeleOp telemetry now splits essentials above the blank separator (always visible) from rate-limited below-line diagnostics.
   The below-line always-on set now includes tag visibility and aim-state hints, while the debug block stays gated by a live
   dashboard+SELECT toggle so drivers can keep loop overhead low while still enabling deep diagnostics on demand.
+- When the debug telemetry toggle and `TeleOpDriverDefaults.DEBUG_FIRING_STATS` are enabled, TeleOp reports launcher RPM drop,
+  drop percentage, drop timing, and recovery timing (AVG/L/R) after each shot to help tune flywheel recovery.
 
 ---
 
