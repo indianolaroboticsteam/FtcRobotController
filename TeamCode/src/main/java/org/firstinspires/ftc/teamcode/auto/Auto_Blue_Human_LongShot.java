@@ -91,14 +91,14 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
                 .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.0, 1)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.15, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 500)
-                .fire("Fire volley", 3, false, 0)
+                .fire("Fire volley", 3, false, true, 0)
                 .returnToStoredHeading("Return to start heading", .85)
                 .move("Drive to balls", 32.0, 45.0, -90.0, 1)
                 .move("Drive backward", 32.0, 180.0, 0.0, 1)
                 .move("Drive to triangle", 58.0, -26.0, 115.0, 1.0)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, -30, 30, 1000)
                 .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",1500,false)
+                .fireContinuous("firing",1500,false, true)
                 .move("Drive out",6,0,0,1)
 
                 .run();

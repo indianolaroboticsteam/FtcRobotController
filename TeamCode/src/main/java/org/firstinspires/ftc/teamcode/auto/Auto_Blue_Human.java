@@ -89,15 +89,15 @@ public class Auto_Blue_Human extends BaseAuto {
                 .move("Drive forward to target firing zone", 80.0, 0.0, 0.0, 1.0)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 1000)
-                .fireContinuous("firing",1500,true)
-                //.fire("Fire volley", 3, true, 000)
+                .fireContinuous("firing",1500,true, true)
+                //.fire("Fire volley", 3, true, true, 000)
                 .returnToStoredHeading("Return to start heading", 0.85)
                 .move("Drive to balls", 58.0, 170.0, -90.0, 1.0)
                 .move("Drive backward", 32.0, 180.0, 0.0, 1.0)
                 .move("Drive to triangle", 58.0, -26.0, 115.0, 1.0)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, -30, 30, 1000)
                 .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",1500,true)
+                .fireContinuous("firing",1500,true, true)
                 .move("Drive out",6,0,0,1)
                 .run();
     }
