@@ -79,6 +79,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Coordinated with launcher readiness and StopAll safety.
 - FeedStop homing is now queued until START so INIT stays motionless; the servo homes and parks at the blocking angle as soon as
   the match begins.
+- StopAll now enters a stop-hold mode that parks the FeedStop once, pauses the homing/state machine, and resumes cleanly when
+  STOP is released to avoid continuous servo command spam.
 - FeedStop can open immediately, but in TeleOp the feed motor waits for the launcher RPM window (with the shared settle time)
   whenever `SharedRobotTuning.HOLD_FIRE_FOR_RPM` is set to `ALL` (every shot/hold) or `INITIAL` (first shot/stream start only);
   `OFF` disables the RPM-ready gate entirely. Autonomous firing now uses per-call `requireLauncherAtSpeed` flags instead. The
@@ -99,9 +101,12 @@ always exits on timeout so neither TeleOp nor Auto can stall indefinitely.
 Firing readiness checks now latch the shot target RPM at `FIRE_REQUESTED` so RPM gating uses a stable reference even when vision
 targets are fluctuating, and spray-like shots skip the RPM window entirely while still running the post-shot recovery guard.
 A continuous readiness latch (looser band + settle) enables a fast-path when the launcher is already stable before a shot, and
-recovery exits using a dedicated RPM band/timeout so the RECOVERING state never stalls. TeleOp can optionally force a compact
-firing-state debug block below the telemetry separator (state/mode, last-shot timing line, and readiness/recovery metrics) via
-`DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG`.
+recovery exits using a dedicated RPM band/timeout so the RECOVERING state never stalls. Streaming fire (spray/continuous) now
+uses its own recovery band + max timeout to keep cadence high when RPM sag is small, while rapid SINGLE taps inside the burst
+window adopt burst recovery tuning so “tap tap tap” sequences feel like a short burst without TeleOp-only logic. When streaming
+or bursting and the FeedStop gate is already RELEASE, the controller skips the per-shot lead delay to avoid paying the servo
+lead time repeatedly. TeleOp can optionally force a compact firing-state debug block below the telemetry separator
+(state/mode, last-shot timing line, and readiness/recovery metrics) via `DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG`.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.
@@ -197,7 +202,7 @@ firing-state debug block below the telemetry separator (state/mode, last-shot ti
 ## 🛑 StopAll System (Cross-cutting)
 - Safety-critical: all motors zero immediately.  
 - Enabled during TeleOp and can be triggered automatically.
-- FeedStop updates pause while STOP is latched so the servo remains still.
+- FeedStop enters an edge-triggered stop-hold park on STOP entry and ignores repeated updates until STOP is released.
 
 ---
 
