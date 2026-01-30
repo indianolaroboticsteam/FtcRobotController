@@ -73,11 +73,11 @@ public class Auto_Red_Target extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .adjustAutoScale("AutoRPM tweak +2%", 0.02)
+                //.adjustAutoScale("AutoRPM tweak +2%", 0.02)
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
-                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 1)
-                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
+                .move("Drive 40 in to standoff", 36.0, 0.0, 180.0, 1)
+                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.45, 30, -30, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 500)
                 .fireContinuous("firing",2000,true, true)
                 .returnToStoredHeading("Return to start heading", 0.45)
